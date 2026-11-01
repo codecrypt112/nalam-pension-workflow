@@ -1,0 +1,86 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  field_verifier
+  approving_officer
+}
+
+enum Category {
+  old_age
+  widow
+}
+
+enum Stage {
+  stage1
+  stage2
+  stage3
+}
+
+enum Status {
+  in_progress
+  returned
+  approved
+  rejected
+}
+
+enum EventAction {
+  forward
+  return_app
+  reject
+  approve
+}
+
+model User {
+  id           String             @id @default(cuid())
+  name         String
+  username     String             @unique
+  passwordHash String
+  role         Role
+  createdAt    DateTime           @default(now())
+  events       ApplicationEvent[]
+}
+
+model Application {
+  id             String   @id @default(cuid())
+  applicantName  String
+  age            Int
+  dob            DateTime
+  gender         String
+  address        String
+  category       Category
+  monthlyIncome  Int
+  spouseDeceased Boolean?
+  remarried      Boolean?
+  aadhaarNo      String
+  bankAccount    String
+  stage          Stage    @default(stage1)
+  status         Status   @default(in_progress)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  events ApplicationEvent[]
+
+  @@index([stage, status])
+}
+
+model ApplicationEvent {
+  id            String      @id @default(cuid())
+  applicationId String
+  application   Application @relation(fields: [applicationId], references: [id])
+  actorId       String
+  actor         User        @relation(fields: [actorId], references: [id])
+  stage         Stage
+  action        EventAction
+  remarks       String
+  aiAssisted    Boolean     @default(false)
+  aiEdited      Boolean?
+  createdAt     DateTime    @default(now())
+
+  @@index([applicationId, createdAt])
+}

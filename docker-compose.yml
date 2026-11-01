@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: nalam
+      POSTGRES_PASSWORD: nalam
+      POSTGRES_DB: nalam
+    ports:
+      - "5432:5432"
+    volumes:
+      - nalam_pgdata:/var/lib/postgresql/data
+
+volumes:
+  nalam_pgdata:
