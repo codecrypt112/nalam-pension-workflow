@@ -2,7 +2,8 @@
 
 A workflow tool for Tamil Nadu Social Security Pension officers — built in Tamil, for the two roles who actually process these applications on the ground.
 
-- **Live demo:** _<deployed URL — see below>_
+- **Live demo:** https://nalam-pension-workflow.vercel.app
+- **GitHub repo:** https://github.com/codecrypt112/nalam-pension-workflow
 - **Login credentials:** see [Demo credentials](#demo-credentials)
 
 ## The problem, and who it affects
