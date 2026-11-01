@@ -15,10 +15,12 @@ Each handoff happens via physical files. Officers have no shared view of what's 
 
 ## 2. What the application does
 
-A single Next.js app with two staff roles, each with their own login:
+A single Next.js app with two staff roles. Accounts are seeded (no public signup) and each officer logs in individually:
 
 - **கள சரிபார்ப்பாளர் (Field Verifier)** — VAO-equivalent. Owns stages 1 and 2.
 - **அனுமதி அதிகாரி (Approving Officer)** — Tahsildar-equivalent. Owns stage 3.
+
+**UI language.** All officer-facing text — labels, buttons, form fields, validation messages, status chips, the history timeline, and every AI-generated output — is in Tamil (தமிழ்). English appears only in the code, the database schema, and the README. This is a primary evaluation axis ("quality of the design in the local language"), not a cosmetic layer of translated labels.
 
 ### Workflow (3 stages, at least 3 as required)
 
@@ -35,7 +37,7 @@ Actions available at each stage:
 
 Every application has a `category`: **Old Age** (age ≥ 60) or **Widow** (husband deceased, not remarried) — same 3-stage pipeline, category-specific eligibility checklist shown at each stage.
 
-Every action requires a remarks field (approve/reject/return are all terminal-or-redirect state changes, never silent) and is appended to an immutable history log: actor, role, stage, action, remarks, timestamp, and whether the remarks were AI-drafted or hand-written.
+Every action requires a remarks field (approve/reject/return are all terminal-or-redirect state changes, never silent) and is appended to an immutable history log: actor, role, stage, action, remarks, timestamp, whether the remarks were AI-drafted or hand-written, and — for AI-drafted remarks — whether the officer edited the draft before submitting.
 
 ### Dashboards ("what needs attention first")
 
@@ -54,9 +56,9 @@ AI assists three specific moments where officers currently do manual, repetitive
 
 | Stage | AI assist | Why it genuinely helps |
 |---|---|---|
-| 1. Document Verification | Flags inconsistencies across entered fields (e.g. stated age vs. DOB, declared income vs. land holding) | Catches clerical mismatches a human skims past under volume |
+| 1. Document Verification | Flags inconsistencies across entered fields (e.g. declared age vs. date of birth, declared monthly income against the scheme's income ceiling, or a Widow-category record whose husband-deceased / remarried status is unset) | Catches clerical mismatches a human skims past under volume |
 | 2. Field Visit | Expands the verifier's short field notes into a formal Tamil verification report matching register language | Removes the tedious formal-drafting step; verifier edits before submitting |
-| 3. Final Approval | Summarizes the full case (application + stage history) into a short brief, and drafts approve/reject/return remarks | Officer reads one paragraph instead of re-reading two stages of notes, still writes the final word |
+| 3. Final Approval | Summarizes the full case (application + stage history) into a short Tamil brief, and drafts approve/reject/return remarks in Tamil | Officer reads one paragraph instead of re-reading two stages of notes, still writes the final word |
 
 **Provider:** NVIDIA NIM free-tier models via their OpenAI-compatible endpoint (`https://integrate.api.nvidia.com/v1/chat/completions`), model `meta/llama-3.3-70b-instruct` (configurable via env var). A single server-side module, `lib/ai.ts`, exposes `checkDocumentConsistency()`, `draftFieldReport()`, `summarizeCase()`, and `draftDecisionRemarks()`.
 
@@ -66,13 +68,18 @@ AI assists three specific moments where officers currently do manual, repetitive
 
 ```
 User             id, name, username, password_hash, role (field_verifier | approving_officer)
-Application      id, applicant_name, age, gender, address, category (old_age | widow),
-                  aadhaar_no, bank_account, stage, status, created_at, updated_at
+Application      id, applicant_name, age, dob, gender, address, category (old_age | widow),
+                  monthly_income, spouse_deceased (bool, Widow only), remarried (bool, Widow only),
+                  aadhaar_no, bank_account,
+                  stage (1 | 2 | 3), status (in_progress | returned | approved | rejected),
+                  created_at, updated_at
 ApplicationEvent id, application_id, actor_user_id, stage, action, remarks,
-                  ai_assisted (bool), created_at
+                  ai_assisted (bool), ai_edited (bool, null unless ai_assisted), created_at
 ```
 
 `ApplicationEvent` is append-only and is both the audit trail and the source for the history timeline UI. No separate `Applicant` table — one application per applicant is the real-world cardinality here, so splitting it out would be premature.
+
+Derived, not duplicated: the actor's **role** on the timeline is read from `actor_user_id → User.role` (seed accounts have fixed roles, so no point-in-time role column is needed). `age` is the figure declared on the paper form while `dob` is transcribed from age proof — the stage-1 AI consistency check flags any mismatch, and dob-derived age is authoritative for the age ≥ 60 eligibility rule. The dashboard's "returned" and "missing-document" signals are derived from `status` together with the most recent event's `action` (e.g. a stage-1 "return for missing docs"), not stored as separate flags. `spouse_deceased` / `remarried` are only populated for the Widow category and drive its eligibility checklist.
 
 **Explicit scope cut — no file/image uploads.** A production system would integrate document scanning/OCR and blob storage. This demo captures structured data entry instead (as a counter clerk would transcribe from a paper form), which is enough to demonstrate the workflow and the AI assistance without taking on cloud storage infrastructure that doesn't change what's being evaluated here. Called out plainly in the README.
 
@@ -91,7 +98,7 @@ Tracked live on the Approving Officer's dashboard, not just claimed in the READM
 
 - **Average days-to-decision** per stage — does digitizing the handoff actually shrink cycle time vs. the paper baseline (which the README will state as a researched/estimated figure)?
 - **% returned at least once** — a proxy for upstream document/data quality; a rising trend flags a training gap, not just a tool gap.
-- **AI-draft edit rate** — when an officer submits remarks that were AI-drafted, we record whether they changed the text before submitting (`ai_assisted` + a simple diff-check). A high "submitted unedited" rate on bad drafts would be a red flag, not a win — the README discusses this nuance.
+- **AI-draft edit rate** — when an officer submits remarks that were AI-drafted (`ai_assisted = true`), a diff-check at submit time records whether they changed the text first, stored on `ApplicationEvent.ai_edited`. A high "submitted unedited" rate on bad drafts would be a red flag, not a win — the README discusses this nuance.
 - **Backlog size over time** (count per stage) — the basic "is this draining or growing" signal.
 
 ## 7. Testing
