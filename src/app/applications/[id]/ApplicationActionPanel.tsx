@@ -10,6 +10,7 @@ import {
   submitApplicationAction,
   SubmitActionState,
 } from "./actions";
+import type { Dictionary } from "@/lib/i18n/dictionary";
 
 type AiResult = { text: string; source: "nim" | "offline" };
 type StageValue = "stage1" | "stage2" | "stage3";
@@ -21,10 +22,14 @@ export function ApplicationActionPanel({
   applicationId,
   stage,
   availableActions,
+  t,
+  aiSourceLabels,
 }: {
   applicationId: string;
   stage: StageValue;
   availableActions: ActionOption[];
+  t: Dictionary["actionPanel"];
+  aiSourceLabels: Dictionary["aiSource"];
 }) {
   const [remarks, setRemarks] = useState("");
   const [draftSnapshot, setDraftSnapshot] = useState<string | null>(null);
@@ -41,7 +46,7 @@ export function ApplicationActionPanel({
 
   const aiEdited = aiAssisted ? remarks !== draftSnapshot : null;
 
-  function useAsRemarks(text: string) {
+  function applyDraftAsRemarks(text: string) {
     setRemarks(text);
     setDraftSnapshot(text);
     setAiAssisted(true);
@@ -63,10 +68,8 @@ export function ApplicationActionPanel({
   return (
     <div className="space-y-6">
       <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="font-semibold text-slate-900">AI உதவி</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          இது ஒரு வரைவு மட்டுமே. நீங்கள் படித்து, திருத்தி, இறுதி முடிவை நீங்களே எடுக்க வேண்டும்.
-        </p>
+        <h3 className="font-semibold text-slate-900">{t.aiHelpHeading}</h3>
+        <p className="mt-1 text-xs text-slate-500">{t.aiHelpDisclaimer}</p>
 
         {stage === "stage1" && (
           <div className="mt-3">
@@ -76,22 +79,20 @@ export function ApplicationActionPanel({
               onClick={() => runTool(() => runDocumentCheckAction(applicationId))}
               className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
             >
-              {toolPending ? "சரிபார்க்கிறது..." : "ஆவண முரண்பாடு சரிபார்ப்பு"}
+              {toolPending ? t.documentCheckPending : t.documentCheckButton}
             </button>
           </div>
         )}
 
         {stage === "stage2" && (
           <div className="mt-3 space-y-2">
-            <label className="block text-sm font-medium text-slate-700">
-              கள குறிப்புகள் (சுருக்கமாக)
-            </label>
+            <label className="block text-sm font-medium text-slate-700">{t.fieldNotesLabel}</label>
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               rows={3}
               className="block w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-              placeholder="எ.கா: வீட்டுக்குச் சென்றேன், தாத்தா தனியாக வசிக்கிறார்..."
+              placeholder={t.fieldNotesPlaceholder}
             />
             <button
               type="button"
@@ -99,7 +100,7 @@ export function ApplicationActionPanel({
               onClick={() => runTool(() => runFieldReportAction(applicationId, notes))}
               className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
             >
-              {toolPending ? "உருவாக்குகிறது..." : "அறிக்கை வரைவு உருவாக்கு"}
+              {toolPending ? t.draftReportPending : t.draftReportButton}
             </button>
           </div>
         )}
@@ -112,7 +113,7 @@ export function ApplicationActionPanel({
               onClick={() => runTool(() => runCaseSummaryAction(applicationId))}
               className="rounded-md bg-slate-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
             >
-              வழக்கு சுருக்கம்
+              {t.caseSummaryButton}
             </button>
             {availableActions.map((opt) => (
               <button
@@ -124,7 +125,7 @@ export function ApplicationActionPanel({
                 }
                 className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
               >
-                {opt.label} — வரைவு
+                {opt.label} {t.draftSuffix}
               </button>
             ))}
           </div>
@@ -133,13 +134,13 @@ export function ApplicationActionPanel({
         {toolResult && (
           <div className="mt-4 rounded-md bg-slate-50 p-3">
             <div className="flex items-center justify-between gap-2">
-              <AiSourceBadge source={toolResult.source} />
+              <AiSourceBadge source={toolResult.source} labels={aiSourceLabels} />
               <button
                 type="button"
-                onClick={() => useAsRemarks(toolResult.text)}
+                onClick={() => applyDraftAsRemarks(toolResult.text)}
                 className="text-sm font-medium text-blue-700 hover:underline"
               >
-                குறிப்பில் நகலெடு →
+                {t.copyToRemarks}
               </button>
             </div>
             <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{toolResult.text}</p>
@@ -148,13 +149,13 @@ export function ApplicationActionPanel({
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <h3 className="font-semibold text-slate-900">நடவடிக்கை</h3>
+        <h3 className="font-semibold text-slate-900">{t.actionHeading}</h3>
         <form action={formAction} className="mt-3 space-y-3">
           <input type="hidden" name="applicationId" value={applicationId} />
           <input type="hidden" name="aiAssisted" value={aiAssisted ? "true" : "false"} />
           <input type="hidden" name="aiEdited" value={aiEdited ? "true" : "false"} />
           <div>
-            <label className="block text-sm font-medium text-slate-700">குறிப்பு (கட்டாயம்)</label>
+            <label className="block text-sm font-medium text-slate-700">{t.remarksLabel}</label>
             <textarea
               name="remarks"
               value={remarks}

@@ -7,8 +7,9 @@ import {
   canUserActOnApplication,
   checkEligibility,
   computeUrgency,
+  formatEligibilityReason,
+  formatUrgencyReason,
   INCOME_CEILING,
-  OLD_AGE_MIN_AGE,
 } from "@/lib/workflow";
 
 function yearsAgo(n: number): Date {
@@ -60,7 +61,7 @@ describe("checkEligibility — old age category", () => {
       remarried: null,
     });
     expect(result.eligible).toBe(false);
-    expect(result.reasons.join(" ")).toContain(String(OLD_AGE_MIN_AGE));
+    expect(result.reasons.some((r) => r.code === "below_min_age")).toBe(true);
   });
 
   it("is ineligible when income exceeds the ceiling", () => {
@@ -73,7 +74,7 @@ describe("checkEligibility — old age category", () => {
       remarried: null,
     });
     expect(result.eligible).toBe(false);
-    expect(result.reasons.some((r) => r.includes("வருமானம்"))).toBe(true);
+    expect(result.reasons.some((r) => r.code === "income_exceeds_ceiling")).toBe(true);
   });
 
   it("flags a mismatch between declared age and date of birth", () => {
@@ -86,7 +87,7 @@ describe("checkEligibility — old age category", () => {
       remarried: null,
     });
     expect(result.eligible).toBe(false);
-    expect(result.reasons.some((r) => r.includes("வயது"))).toBe(true);
+    expect(result.reasons.some((r) => r.code === "age_mismatch")).toBe(true);
   });
 });
 
@@ -125,7 +126,7 @@ describe("checkEligibility — widow category", () => {
       remarried: true,
     });
     expect(result.eligible).toBe(false);
-    expect(result.reasons.some((r) => r.includes("மீண்டும் திருமணம்"))).toBe(true);
+    expect(result.reasons.some((r) => r.code === "remarried")).toBe(true);
   });
 
   it("has no minimum age requirement", () => {
@@ -138,6 +139,39 @@ describe("checkEligibility — widow category", () => {
       remarried: false,
     });
     expect(result.eligible).toBe(true);
+  });
+});
+
+describe("formatEligibilityReason / formatUrgencyReason", () => {
+  it("renders every eligibility reason code in both locales without throwing", () => {
+    const reasons: Parameters<typeof formatEligibilityReason>[0][] = [
+      { code: "age_mismatch", declaredAge: 70, derivedAge: 62 },
+      { code: "income_exceeds_ceiling", income: 5000, ceiling: 1000 },
+      { code: "below_min_age", age: 45, minAge: 60 },
+      { code: "spouse_not_confirmed_deceased" },
+      { code: "remarried" },
+    ];
+    for (const reason of reasons) {
+      expect(formatEligibilityReason(reason, "ta").length).toBeGreaterThan(0);
+      expect(formatEligibilityReason(reason, "en").length).toBeGreaterThan(0);
+    }
+  });
+
+  it("renders every urgency reason code in both locales without throwing", () => {
+    const reasons: Parameters<typeof formatUrgencyReason>[0][] = [
+      { code: "returned_for_rework" },
+      { code: "vulnerable_age", age: 85 },
+      { code: "days_pending", days: 10 },
+    ];
+    for (const reason of reasons) {
+      expect(formatUrgencyReason(reason, "ta").length).toBeGreaterThan(0);
+      expect(formatUrgencyReason(reason, "en").length).toBeGreaterThan(0);
+    }
+  });
+
+  it("produces different text for Tamil vs English", () => {
+    const reason = { code: "remarried" as const };
+    expect(formatEligibilityReason(reason, "ta")).not.toBe(formatEligibilityReason(reason, "en"));
   });
 });
 
@@ -160,7 +194,7 @@ describe("computeUrgency", () => {
       lastEventAt: daysAgo(1),
     });
     expect(result.level).toBe("urgent");
-    expect(result.reasons.some((r) => r.includes("திருப்பி"))).toBe(true);
+    expect(result.reasons.some((r) => r.code === "returned_for_rework")).toBe(true);
   });
 
   it("bumps priority for applicants aged 80+", () => {

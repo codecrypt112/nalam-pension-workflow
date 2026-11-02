@@ -1,6 +1,8 @@
 import { Category, Stage, Status } from "@prisma/client";
-import { CATEGORY_LABELS, STAGE_LABELS, STATUS_LABELS } from "@/lib/labels";
+import { categoryLabel, stageLabel, statusLabel } from "@/lib/labels";
 import type { UrgencyResult } from "@/lib/workflow";
+import type { Locale } from "@/lib/i18n/types";
+import type { Dictionary } from "@/lib/i18n/dictionary";
 
 function Badge({
   children,
@@ -18,17 +20,17 @@ function Badge({
   );
 }
 
-export function CategoryBadge({ category }: { category: Category }) {
+export function CategoryBadge({ category, locale }: { category: Category; locale: Locale }) {
   const color =
     category === Category.old_age ? "bg-amber-100 text-amber-800" : "bg-purple-100 text-purple-800";
-  return <Badge className={color}>{CATEGORY_LABELS[category]}</Badge>;
+  return <Badge className={color}>{categoryLabel(category, locale)}</Badge>;
 }
 
-export function StageBadge({ stage }: { stage: Stage }) {
-  return <Badge className="bg-slate-100 text-slate-700">{STAGE_LABELS[stage]}</Badge>;
+export function StageBadge({ stage, locale }: { stage: Stage; locale: Locale }) {
+  return <Badge className="bg-slate-100 text-slate-700">{stageLabel(stage, locale)}</Badge>;
 }
 
-export function StatusBadge({ status }: { status: Status }) {
+export function StatusBadge({ status, locale }: { status: Status; locale: Locale }) {
   const color =
     status === Status.approved
       ? "bg-green-100 text-green-800"
@@ -37,15 +39,21 @@ export function StatusBadge({ status }: { status: Status }) {
         : status === Status.returned
           ? "bg-orange-100 text-orange-800"
           : "bg-blue-100 text-blue-800";
-  return <Badge className={color}>{STATUS_LABELS[status]}</Badge>;
+  return <Badge className={color}>{statusLabel(status, locale)}</Badge>;
 }
 
-export function UrgencyBadge({ urgency }: { urgency: UrgencyResult }) {
+export function UrgencyBadge({
+  urgency,
+  labels,
+}: {
+  urgency: UrgencyResult;
+  labels: Dictionary["urgency"];
+}) {
   if (urgency.level === "urgent") {
-    return <Badge className="bg-red-600 text-white">அவசரம்</Badge>;
+    return <Badge className="bg-red-600 text-white">{labels.urgent}</Badge>;
   }
   if (urgency.level === "attention") {
-    return <Badge className="bg-yellow-400 text-yellow-900">கவனம் தேவை</Badge>;
+    return <Badge className="bg-yellow-400 text-yellow-900">{labels.attention}</Badge>;
   }
-  return <Badge className="bg-slate-100 text-slate-500">இயல்பு</Badge>;
+  return <Badge className="bg-slate-100 text-slate-500">{labels.normal}</Badge>;
 }

@@ -13,32 +13,39 @@ import {
   draftFieldReport,
   summarizeCase,
 } from "@/lib/ai";
-import { ACTION_LABELS, STAGE_LABELS } from "@/lib/labels";
+import { actionLabel, stageLabel } from "@/lib/labels";
+import { getLocale } from "@/lib/i18n/locale";
+import { getDictionary } from "@/lib/i18n/dictionary";
+import type { Locale } from "@/lib/i18n/types";
 
-async function loadApplication(id: string) {
+async function loadApplication(id: string, locale: Locale) {
   const app = await db.application.findUnique({ where: { id } });
-  if (!app) throw new Error("விண்ணப்பம் கிடைக்கவில்லை.");
+  if (!app) throw new Error(getDictionary(locale).applicationDetail.applicationNotFoundError);
   return app;
 }
 
 export async function runDocumentCheckAction(applicationId: string): Promise<AiResult> {
   await requireSession();
-  const app = await loadApplication(applicationId);
-  return checkDocumentConsistency(app);
+  const locale = await getLocale();
+  const app = await loadApplication(applicationId, locale);
+  return checkDocumentConsistency(app, locale);
 }
 
 export async function runFieldReportAction(applicationId: string, notes: string): Promise<AiResult> {
   await requireSession();
-  const app = await loadApplication(applicationId);
+  const locale = await getLocale();
+  const app = await loadApplication(applicationId, locale);
   return draftFieldReport(
     { applicantName: app.applicantName, age: app.age, category: app.category, address: app.address },
-    notes
+    notes,
+    locale
   );
 }
 
 export async function runCaseSummaryAction(applicationId: string): Promise<AiResult> {
   await requireSession();
-  const app = await loadApplication(applicationId);
+  const locale = await getLocale();
+  const app = await loadApplication(applicationId, locale);
   const events = await db.applicationEvent.findMany({
     where: { applicationId },
     orderBy: { createdAt: "asc" },
@@ -49,14 +56,15 @@ export async function runCaseSummaryAction(applicationId: string): Promise<AiRes
       applicantName: app.applicantName,
       age: app.age,
       category: app.category,
-      stageLabel: STAGE_LABELS[app.stage],
+      stageLabel: stageLabel(app.stage, locale),
     },
     events.map((e) => ({
-      stageLabel: STAGE_LABELS[e.stage],
-      actionLabel: ACTION_LABELS[e.action],
+      stageLabel: stageLabel(e.stage, locale),
+      actionLabel: actionLabel(e.action, locale),
       remarks: e.remarks,
       actorName: e.actor.name,
-    }))
+    })),
+    locale
   );
 }
 
@@ -65,17 +73,19 @@ export async function runDecisionDraftAction(
   decision: "approve" | "reject" | "return_app"
 ): Promise<AiResult> {
   await requireSession();
-  const app = await loadApplication(applicationId);
+  const locale = await getLocale();
+  const app = await loadApplication(applicationId, locale);
   const eligibility = checkEligibility(app);
   return draftDecisionRemarks(
     {
       applicantName: app.applicantName,
       age: app.age,
       category: app.category,
-      stageLabel: STAGE_LABELS[app.stage],
+      stageLabel: stageLabel(app.stage, locale),
     },
     eligibility,
-    decision
+    decision,
+    locale
   );
 }
 
@@ -86,6 +96,8 @@ export async function submitApplicationAction(
   formData: FormData
 ): Promise<SubmitActionState> {
   const session = await requireSession();
+  const locale = await getLocale();
+  const t = getDictionary(locale);
   const applicationId = String(formData.get("applicationId") ?? "");
   const action = String(formData.get("action") ?? "") as EventAction;
   const remarks = String(formData.get("remarks") ?? "").trim();
@@ -93,13 +105,13 @@ export async function submitApplicationAction(
   const aiEdited = aiAssisted ? formData.get("aiEdited") === "true" : null;
 
   if (!remarks) {
-    return { error: "குறிப்பு இல்லாமல் செயலைச் செய்ய முடியாது." };
+    return { error: t.applicationDetail.remarksRequiredError };
   }
 
-  const app = await loadApplication(applicationId);
+  const app = await loadApplication(applicationId, locale);
   const result = applyAction(session.role, app.stage, app.status, action);
   if (!result.ok) {
-    return { error: result.error };
+    return { error: t.applicationDetail.actionNotAllowedError };
   }
 
   await db.$transaction([

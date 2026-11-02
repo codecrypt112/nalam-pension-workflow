@@ -25,6 +25,8 @@ Two staff roles, each with their own login:
 - **கள சரிபார்ப்பாளர் (Field Verifier)** — VAO-equivalent. Owns stages 1–2.
 - **அனுமதி அதிகாரி (Approving Officer)** — Tahsildar-equivalent. Owns stage 3.
 
+**Language:** Tamil is the default and the home language of this tool — every label, badge, and message is written for it, not translated as an afterthought. A தமிழ் / English toggle in the header switches the whole UI (and, critically, what language the AI drafts in — matching whichever language the officer is currently reading), defaulting to whichever the device's browser language prefers. This was added after reviewer feedback that the tool needed to be testable by people who don't read Tamil; the deterministic eligibility/urgency logic (`lib/workflow.ts`) was refactored to return structured reason codes rather than hardcoded strings so the same business logic drives both languages with zero duplication.
+
 ### The workflow (3 stages)
 
 ```
@@ -83,6 +85,7 @@ Why this should work: none of it asks an officer to change *how* they decide —
 - **Deterministic business logic kept separate from AI.** `src/lib/workflow.ts` is pure, dependency-free functions (eligibility, urgency scoring, legal stage-transitions) with no AI or I/O — this is what's unit-tested, and it's what stays auditable regardless of which model is wired into `lib/ai.ts`.
 - **No file/image upload pipeline.** A production system would add document scanning/OCR and blob storage. This demo captures structured data entry instead, as a counter clerk would transcribe from a paper form — enough to demonstrate the workflow and the AI assistance without taking on infrastructure that doesn't change what's being evaluated.
 - **Next.js 16 naming/API changes encountered during the build**, for anyone comparing against older Next.js docs: `middleware.ts` → `proxy.ts` (route protection lives in `src/proxy.ts`), and the new "Cache Components" caching model (on by default in the scaffold) was turned off in `next.config.ts` since this app is entirely dynamic/session-gated with no public static pages to benefit from it.
+- **i18n via a plain dictionary, not a routing-based library (next-intl etc.).** With 2 locales and no public/SEO-indexed pages, a locale cookie (`src/lib/i18n/`) plus a `Record<Locale, Dictionary>` object is simpler and more transparent than adding locale-prefixed routes. The one place this required real design work: `checkEligibility`/`computeUrgency` in `lib/workflow.ts` return structured reason *codes* (e.g. `{ code: "below_min_age", age, minAge }`), not pre-formatted strings — a `format*Reason(code, locale)` function renders them at the view layer, so the tested business logic has no language baked into it at all.
 
 ## Testing
 
@@ -90,7 +93,7 @@ Why this should work: none of it asks an officer to change *how* they decide —
 npm test
 ```
 
-29 Vitest cases cover the pure business logic in `src/lib/workflow.ts`: category-specific eligibility rules, the urgency-scoring formula, and the legal stage-transition table (which role can act on which stage, and that closed applications reject every action). The AI module and the UI were verified end-to-end in a real browser against the live deployment (login → act through all three stages → approve, plus the reject/return branches) rather than mocked, since the thing actually worth verifying is the full Server Action + database + AI round trip.
+32 Vitest cases cover the pure business logic in `src/lib/workflow.ts`: category-specific eligibility rules, the urgency-scoring formula, the legal stage-transition table (which role can act on which stage, and that closed applications reject every action), and that every reason code renders to non-empty, distinct text in both locales. The AI module and the UI were verified end-to-end in a real browser against the live deployment (login → act through all three stages → approve, plus the reject/return branches, in both languages) rather than mocked, since the thing actually worth verifying is the full Server Action + database + AI round trip.
 
 ## Running it locally
 

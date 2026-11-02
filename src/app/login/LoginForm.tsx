@@ -2,17 +2,18 @@
 
 import { useActionState } from "react";
 import { loginAction, LoginState } from "./actions";
+import type { Dictionary } from "@/lib/i18n/dictionary";
 
 const initialState: LoginState = { error: null };
 
-export function LoginForm() {
+export function LoginForm({ t }: { t: Dictionary["login"] }) {
   const [state, formAction, pending] = useActionState(loginAction, initialState);
 
   return (
     <form action={formAction} className="space-y-4">
       <div>
         <label htmlFor="username" className="block text-sm font-medium text-slate-700">
-          பயனர்பெயர்
+          {t.usernameLabel}
         </label>
         <input
           id="username"
@@ -25,7 +26,7 @@ export function LoginForm() {
       </div>
       <div>
         <label htmlFor="password" className="block text-sm font-medium text-slate-700">
-          கடவுச்சொல்
+          {t.passwordLabel}
         </label>
         <input
           id="password"
@@ -48,7 +49,7 @@ export function LoginForm() {
         disabled={pending}
         className="w-full rounded-md bg-blue-700 px-4 py-2 font-medium text-white hover:bg-blue-800 disabled:opacity-60"
       >
-        {pending ? "சரிபார்க்கிறது..." : "உள்நுழைக"}
+        {pending ? t.submitPending : t.submitIdle}
       </button>
     </form>
   );

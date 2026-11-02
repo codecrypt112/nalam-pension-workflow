@@ -1,4 +1,5 @@
 import { Category, EventAction, Role, Stage, Status } from "@prisma/client";
+import type { Locale } from "@/lib/i18n/types";
 
 /** Monthly household income ceiling (INR) for both pension categories. */
 export const INCOME_CEILING = 1000;
@@ -15,9 +16,16 @@ export type EligibilityInput = {
   remarried: boolean | null;
 };
 
+export type EligibilityReason =
+  | { code: "age_mismatch"; declaredAge: number; derivedAge: number }
+  | { code: "income_exceeds_ceiling"; income: number; ceiling: number }
+  | { code: "below_min_age"; age: number; minAge: number }
+  | { code: "spouse_not_confirmed_deceased" }
+  | { code: "remarried" };
+
 export type EligibilityResult = {
   eligible: boolean;
-  reasons: string[];
+  reasons: EligibilityReason[];
 };
 
 export function ageFromDob(dob: Date, asOf: Date = new Date()): number {
@@ -33,38 +41,70 @@ export function ageFromDob(dob: Date, asOf: Date = new Date()): number {
  * Category-specific eligibility checklist. Pure and deterministic — this is
  * what the officer sees as a checklist, and what the AI consistency check
  * in lib/ai.ts cross-references against (it flags mismatches, it doesn't
- * decide eligibility itself).
+ * decide eligibility itself). Reasons are structured codes, not localized
+ * text — see `formatEligibilityReason` for display strings.
  */
 export function checkEligibility(input: EligibilityInput): EligibilityResult {
-  const reasons: string[] = [];
+  const reasons: EligibilityReason[] = [];
   const derivedAge = ageFromDob(input.dob);
 
   if (Math.abs(derivedAge - input.age) > 1) {
-    reasons.push(
-      `விண்ணப்பத்தில் உள்ள வயது (${input.age}) பிறந்த தேதியிலிருந்து கணக்கிடப்பட்ட வயதுடன் (${derivedAge}) பொருந்தவில்லை.`
-    );
+    reasons.push({ code: "age_mismatch", declaredAge: input.age, derivedAge });
   }
 
   if (input.monthlyIncome > INCOME_CEILING) {
-    reasons.push(
-      `மாத வருமானம் ரூ.${input.monthlyIncome} வரம்பான ரூ.${INCOME_CEILING} ஐ விட அதிகம்.`
-    );
+    reasons.push({ code: "income_exceeds_ceiling", income: input.monthlyIncome, ceiling: INCOME_CEILING });
   }
 
   if (input.category === Category.old_age) {
     if (derivedAge < OLD_AGE_MIN_AGE) {
-      reasons.push(`வயது ${derivedAge}, முதுமை ஓய்வூதியத்திற்கான குறைந்தபட்ச வயது ${OLD_AGE_MIN_AGE} ஐ விட குறைவு.`);
+      reasons.push({ code: "below_min_age", age: derivedAge, minAge: OLD_AGE_MIN_AGE });
     }
   } else {
     if (input.spouseDeceased !== true) {
-      reasons.push("கணவர் இறப்பு உறுதிப்படுத்தப்படவில்லை.");
+      reasons.push({ code: "spouse_not_confirmed_deceased" });
     }
     if (input.remarried === true) {
-      reasons.push("மீண்டும் திருமணம் செய்துள்ளார் — விதவை உதவித்தொகைக்கு தகுதியற்றவர்.");
+      reasons.push({ code: "remarried" });
     }
   }
 
   return { eligible: reasons.length === 0, reasons };
+}
+
+const ELIGIBILITY_REASON_TEMPLATES: Record<Locale, (r: EligibilityReason) => string> = {
+  ta: (r) => {
+    switch (r.code) {
+      case "age_mismatch":
+        return `விண்ணப்பத்தில் உள்ள வயது (${r.declaredAge}) பிறந்த தேதியிலிருந்து கணக்கிடப்பட்ட வயதுடன் (${r.derivedAge}) பொருந்தவில்லை.`;
+      case "income_exceeds_ceiling":
+        return `மாத வருமானம் ரூ.${r.income} வரம்பான ரூ.${r.ceiling} ஐ விட அதிகம்.`;
+      case "below_min_age":
+        return `வயது ${r.age}, முதுமை ஓய்வூதியத்திற்கான குறைந்தபட்ச வயது ${r.minAge} ஐ விட குறைவு.`;
+      case "spouse_not_confirmed_deceased":
+        return "கணவர் இறப்பு உறுதிப்படுத்தப்படவில்லை.";
+      case "remarried":
+        return "மீண்டும் திருமணம் செய்துள்ளார் — விதவை உதவித்தொகைக்கு தகுதியற்றவர்.";
+    }
+  },
+  en: (r) => {
+    switch (r.code) {
+      case "age_mismatch":
+        return `The declared age (${r.declaredAge}) does not match the age derived from the date of birth (${r.derivedAge}).`;
+      case "income_exceeds_ceiling":
+        return `Monthly income of ₹${r.income} exceeds the ₹${r.ceiling} ceiling.`;
+      case "below_min_age":
+        return `Age ${r.age} is below the minimum age of ${r.minAge} for old-age pension.`;
+      case "spouse_not_confirmed_deceased":
+        return "Spouse's death has not been confirmed.";
+      case "remarried":
+        return "Applicant has remarried — not eligible for widow pension.";
+    }
+  },
+};
+
+export function formatEligibilityReason(reason: EligibilityReason, locale: Locale): string {
+  return ELIGIBILITY_REASON_TEMPLATES[locale](reason);
 }
 
 export type UrgencyInput = {
@@ -74,10 +114,15 @@ export type UrgencyInput = {
   lastEventAt: Date | null;
 };
 
+export type UrgencyReason =
+  | { code: "returned_for_rework" }
+  | { code: "vulnerable_age"; age: number }
+  | { code: "days_pending"; days: number };
+
 export type UrgencyResult = {
   score: number;
   level: "urgent" | "attention" | "normal";
-  reasons: string[];
+  reasons: UrgencyReason[];
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -90,24 +135,24 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export function computeUrgency(input: UrgencyInput, now: Date = new Date()): UrgencyResult {
   const sinceDate = input.lastEventAt ?? input.createdAt;
   const daysPending = Math.floor((now.getTime() - sinceDate.getTime()) / DAY_MS);
-  const reasons: string[] = [];
+  const reasons: UrgencyReason[] = [];
   let score = daysPending * 10;
 
   if (input.status === Status.returned) {
     score += 1000;
-    reasons.push("மீண்டும் பணிபுரிய திருப்பி அனுப்பப்பட்டது");
+    reasons.push({ code: "returned_for_rework" });
   }
 
   if (input.age >= 80) {
     score += 500;
-    reasons.push(`வயது ${input.age} — முன்னுரிமை தேவை`);
+    reasons.push({ code: "vulnerable_age", age: input.age });
   }
 
   if (daysPending > 14) {
     score += 200;
-    reasons.push(`${daysPending} நாட்களாக நிலுவையில்`);
+    reasons.push({ code: "days_pending", days: daysPending });
   } else if (daysPending > 7) {
-    reasons.push(`${daysPending} நாட்களாக நிலுவையில்`);
+    reasons.push({ code: "days_pending", days: daysPending });
   }
 
   let level: UrgencyResult["level"] = "normal";
@@ -115,6 +160,33 @@ export function computeUrgency(input: UrgencyInput, now: Date = new Date()): Urg
   else if (score >= 100) level = "attention";
 
   return { score, level, reasons };
+}
+
+const URGENCY_REASON_TEMPLATES: Record<Locale, (r: UrgencyReason) => string> = {
+  ta: (r) => {
+    switch (r.code) {
+      case "returned_for_rework":
+        return "மீண்டும் பணிபுரிய திருப்பி அனுப்பப்பட்டது";
+      case "vulnerable_age":
+        return `வயது ${r.age} — முன்னுரிமை தேவை`;
+      case "days_pending":
+        return `${r.days} நாட்களாக நிலுவையில்`;
+    }
+  },
+  en: (r) => {
+    switch (r.code) {
+      case "returned_for_rework":
+        return "Returned for rework";
+      case "vulnerable_age":
+        return `Age ${r.age} — needs priority`;
+      case "days_pending":
+        return `Pending for ${r.days} days`;
+    }
+  },
+};
+
+export function formatUrgencyReason(reason: UrgencyReason, locale: Locale): string {
+  return URGENCY_REASON_TEMPLATES[locale](reason);
 }
 
 export const FIELD_VERIFIER_STAGES: Stage[] = [Stage.stage1, Stage.stage2];
@@ -126,7 +198,7 @@ export function stagesForRole(role: Role): Stage[] {
 
 export type StageActionConfig = {
   action: EventAction;
-  label: string;
+  label: Record<Locale, string>;
   nextStage: Stage;
   nextStatus: Status;
   requiresRemarks: true;
@@ -136,21 +208,21 @@ const STAGE_ACTIONS: Record<Stage, StageActionConfig[]> = {
   [Stage.stage1]: [
     {
       action: EventAction.forward,
-      label: "கள ஆய்வுக்கு அனுப்பு",
+      label: { ta: "கள ஆய்வுக்கு அனுப்பு", en: "Forward to field visit" },
       nextStage: Stage.stage2,
       nextStatus: Status.in_progress,
       requiresRemarks: true,
     },
     {
       action: EventAction.return_app,
-      label: "விண்ணப்பதாரருக்கு திருப்பி அனுப்பு (ஆவணம் குறை)",
+      label: { ta: "விண்ணப்பதாரருக்கு திருப்பி அனுப்பு (ஆவணம் குறை)", en: "Return to applicant (missing documents)" },
       nextStage: Stage.stage1,
       nextStatus: Status.returned,
       requiresRemarks: true,
     },
     {
       action: EventAction.reject,
-      label: "நிராகரி (ஆவணப்படி தகுதியற்றவர்)",
+      label: { ta: "நிராகரி (ஆவணப்படி தகுதியற்றவர்)", en: "Reject (ineligible on paper)" },
       nextStage: Stage.stage1,
       nextStatus: Status.rejected,
       requiresRemarks: true,
@@ -159,21 +231,21 @@ const STAGE_ACTIONS: Record<Stage, StageActionConfig[]> = {
   [Stage.stage2]: [
     {
       action: EventAction.forward,
-      label: "இறுதி அனுமதிக்கு அனுப்பு",
+      label: { ta: "இறுதி அனுமதிக்கு அனுப்பு", en: "Forward to final approval" },
       nextStage: Stage.stage3,
       nextStatus: Status.in_progress,
       requiresRemarks: true,
     },
     {
       action: EventAction.return_app,
-      label: "ஆவண சரிபார்ப்புக்கு திருப்பி அனுப்பு",
+      label: { ta: "ஆவண சரிபார்ப்புக்கு திருப்பி அனுப்பு", en: "Return to document verification" },
       nextStage: Stage.stage1,
       nextStatus: Status.returned,
       requiresRemarks: true,
     },
     {
       action: EventAction.reject,
-      label: "நிராகரி (கள ஆய்வில் தகுதியற்றவர்)",
+      label: { ta: "நிராகரி (கள ஆய்வில் தகுதியற்றவர்)", en: "Reject (ineligible after field visit)" },
       nextStage: Stage.stage2,
       nextStatus: Status.rejected,
       requiresRemarks: true,
@@ -182,21 +254,21 @@ const STAGE_ACTIONS: Record<Stage, StageActionConfig[]> = {
   [Stage.stage3]: [
     {
       action: EventAction.approve,
-      label: "அனுமதி (ஓய்வூதியம் வழங்கு)",
+      label: { ta: "அனுமதி (ஓய்வூதியம் வழங்கு)", en: "Approve (sanction pension)" },
       nextStage: Stage.stage3,
       nextStatus: Status.approved,
       requiresRemarks: true,
     },
     {
       action: EventAction.return_app,
-      label: "கள ஆய்வுக்கு திருப்பி அனுப்பு (மீள் சரிபார்ப்பு தேவை)",
+      label: { ta: "கள ஆய்வுக்கு திருப்பி அனுப்பு (மீள் சரிபார்ப்பு தேவை)", en: "Return to field visit (needs reverification)" },
       nextStage: Stage.stage2,
       nextStatus: Status.returned,
       requiresRemarks: true,
     },
     {
       action: EventAction.reject,
-      label: "இறுதி நிராகரிப்பு",
+      label: { ta: "இறுதி நிராகரிப்பு", en: "Final rejection" },
       nextStage: Stage.stage3,
       nextStatus: Status.rejected,
       requiresRemarks: true,
@@ -224,7 +296,7 @@ export function availableActions(role: Role, stage: Stage, status: Status): Stag
 
 export type ApplyActionResult =
   | { ok: true; nextStage: Stage; nextStatus: Status }
-  | { ok: false; error: string };
+  | { ok: false; errorKey: "action_not_allowed" };
 
 /**
  * Validates and resolves a requested action against the current application
@@ -241,10 +313,7 @@ export function applyAction(
   const allowed = availableActions(role, stage, status);
   const config = allowed.find((a) => a.action === action);
   if (!config) {
-    return {
-      ok: false,
-      error: "இந்த நிலையில் இந்த செயலை இந்த பயனர் செய்ய அனுமதியில்லை.",
-    };
+    return { ok: false, errorKey: "action_not_allowed" };
   }
   return { ok: true, nextStage: config.nextStage, nextStatus: config.nextStatus };
 }
